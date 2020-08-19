@@ -38,6 +38,7 @@ function injector() {
 
     Injection
         .where('is_present', true)
+        .where('id', 1) //for esolated pseudo-thread for each API direction
         .fetchAll()
         .then(_stations => {
             station = _stations.toJSON();
@@ -49,7 +50,6 @@ function injector() {
                     console.log('key = ', key);
 
                     var _stat = fetch_data(station[key].id, station[key].idd, between_date, station[key].last_time, station[key].uri, station[key].code, station[key].token, station[key].indx, station[key].msg_id)
-                    // .then(_stat => { console.log('status = ', _stat); })
                     console.log("_stat", _stat);
                 }
             }
@@ -66,40 +66,42 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
     var _conn_status = false; //connection result
 
     var i = 0;
-    console.log("msg_id = ", msg_id);
-    //begin while
-    do {
-        console.log("in _limit = ", _limit);
+    //console.log("msg_id = ", msg_id);
+    // cursors prepare
+    await Equipments
+        .where('idd', idd)
+        .where('is_present', 'true')
+        .fetchAll()
+        .then(_equipments => {
 
-        console.log("i = ", i)
+            equipments = _equipments.toJSON();
+        }).catch(err => console.log('Database fetching data failed...', err));
+
+    //if not recors detection
+    await Sensors_data
+        .query('whereBetween', 'date_time', between_date)
+        .orderBy('date_time', 'asc')
+        .fetchAll()
+        .then(_planty => {
+            let planty = _planty.toJSON();
+            if (planty.length == 0)
+                _go_out = true;
+        });
+
+    //begin while
+    while (!_go_out) {
+        console.log("iteration = ", i)
         //if (_go_out) break;
 
-        await Equipments
-            .where('idd', idd)
-            .where('is_present', 'true')
-            .fetchAll()
-            .then(_equipments => {
-
-                equipments = _equipments.toJSON();
-            }).catch(err => console.log('Database fetching data failed...', err));
 
 
         if (equipments.length > 0) {
-            var header = {
-                "token": token,
-                "message": _limit,
-                "locality": indx,
-                "object": code,
-                "date_time": between_date[1] + '+' + '0' + new Date().getTimezoneOffset() / (-60)
-            };
-            console.log('header = ', header);
+
             var params = {};
             var marker = {};
 
-            console.log('i = ', i);
 
             var time_frame = [new Date(new Date(between_date[0]).getTime() + 60000 * i).format('Y-MM-ddTHH:mm:SS'), new Date((new Date(between_date[0]).getTime() + 60000 * (i + 1))).format('Y-MM-ddTHH:mm:SS')];
-            console.log('time frame = ', time_frame);
 
             //if (_go_out) break;
 
@@ -113,7 +115,7 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                     .fetchAll()
                     .then(_data => {
                         data = _data.toJSON();
-                        console.log('data =', data);
+
                         if (data.length > 0) {//create a pouch with measurements
                             var pouch = {};
 
@@ -129,7 +131,6 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
 
                             }
                             var name = "";
-                            //var marker = { 'tmp': '' };
 
                             if (aspapi_codes_inv[data[index].typemeasure]) {
                                 name = String(aspapi_codes_inv[data[index].typemeasure]);
@@ -139,19 +140,13 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                                 name = String(data[index].typemeasure);
 
                             }
-                            console.log('name = ', name);
 
-                            //   console.log('stack data = ', pouch);
 
                             if (!isEmpty(pouch)) {
                                 marker[name] = pouch;
-                                //merge(marker, pouch);
                             }
 
-                            //delete (marker['tmp']);
-                            //  console.log('pouch = ', marker);
 
-                            //send request
                             if (!isEmpty(marker))
                                 merge(params, marker);
 
@@ -162,14 +157,20 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
 
 
             }
-            // console.log('params = ', params);
-            //console.log('isEmpty = ', !isEmpty(params));
 
             if (!isEmpty(params)) {
-                merge(header, { "params": params });
 
-                console.log('JSON = ', JSON.stringify(header));
-                //var new_date_time = new Date(between_date[1]).format('Y-MM-ddTHH:mm:SS') + '+' + '0' + new Date().getTimezoneOffset() / (-60);
+                console.log('JSON = ', JSON.stringify({
+                    url: uri, method: 'POST', json: {
+                        "token": token,
+                        "message": _limit,
+                        "locality": indx,
+                        "object": code,
+                        "date_time": between_date[1],
+                        "params": params
+                    }
+                }));
+
                 request
                     .defaults({
                         // strictSSL: 'false', // allow us to use our self-signed cert for testing
@@ -186,11 +187,12 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                         "params": params
                     }
                 }, function (err, res, body) {
-                    console.log("err = ", err);
 
                     if (!isEmpty(err)) {
                         var success = false;
                         _conn_status = false;
+                        console.log("err = ", err);
+                        _go_out = true;
                     }
                     else {
                         console.log("response = ", body);
@@ -199,25 +201,12 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                     }
 
                     if (success) {
-                        //  if (msg_id > 0) {
-                        //msg_id--;
-                        let process_time_frame = time_frame[1];
-                        //var view_time = between_date[1]; //transaction time
-                        // } //else {
-                        //  var view_time = last_time; //time not change
 
-                        //}
+                        let process_time_frame = time_frame[1];
+
                         if (_ms_id > 0) {
                             _ms_id--;
 
-                            // if (detect_data(time_frame[1], between_date[1]) > 0) {
-                            //    _limit++;
-                            console.log("msg_id  = ", _ms_id);
-
-                            //} else {
-                            //    _time = between_date[1];
-                            //}
-                            //console.log("msg_id > 0 but data exist = ", _limit);
                             let _time = time_frame[0];
                             if (time_frame[1] < between_date[1]) {
                                 _time = time_frame[1];
@@ -230,7 +219,7 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                             detect_data(time_frame[1], between_date[1]).then(_out => {
                                 if (_out > 0) {
                                     _limit++;
-                                    console.log("msg_id = 0 but data exist = ", _limit);
+                                    // console.log("msg_id = 0 but data exist = ", _limit);
 
                                 } else {
                                     _time = between_date[1];
@@ -256,49 +245,30 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                         let process_time_frame = new Date((new Date(between_date[1]).getTime() - 86400000)).format('Y-MM-ddTHH:mm:SS'); //value that 24 hours ago from now
 
                         if (_ms_id < 1440) {
-                            console.log("_ms_id = ", _ms_id);
-
-                            console.log("msg_id = ", msg_id);
 
                             _ms_id++;
 
-
-                            console.log("_ms_id = ", _ms_id);
+                            //console.log("_ms_id = ", _ms_id);
                             if (process_time_frame > between_date[0]) {//if less than 1440 measures but time is more than 24 hours
 
                                 injection_update_all_time(id, process_time_frame, process_time_frame, _ms_id)
                                     .then(result => {
 
-                                        //console.log("_ms_id = ", _ms_id);
-                                        //console.log("msg_id = ", _ms_id);
-                                        //let process_time_frame = new Date((new Date(between_date[1]).getTime() - 86400000)).format('Y-MM-ddTHH:mm:SS'); //value that 24 hours ago from now
-                                        //console.log("process time frame = ", process_time_frame);
-                                        //console.log('Message id = ', _ms_id, " isn't inserted - server with API", uri, " not avaible now..")
                                         _go_out = true;
-                                        //return 0;
                                     });
 
                             } else {
                                 injection_update_msg(id, _ms_id)
                                     .then(result => {
 
-                                        //console.log("_ms_id = ", _ms_id);
-                                        //console.log("msg_id = ", _ms_id);
-                                        //let process_time_frame = new Date((new Date(between_date[1]).getTime() - 86400000)).format('Y-MM-ddTHH:mm:SS'); //value that 24 hours ago from now
-                                        //console.log("process time frame = ", process_time_frame);
-                                        //console.log('Message id = ', _ms_id, " isn't inserted - server with API", uri, " not avaible now..")
                                         _go_out = true;
-                                        //return 0;
                                     });
                             }
                         } else {
-                            console.log("process time frame = ", process_time_frame);
+                            //console.log("process time frame = ", process_time_frame);
 
                             injection_update_time(id, process_time_frame).then(result => {
-                                //console.log("_ms_id = ", _ms_id);
-                                //console.log("msg_id = ", _ms_id);
 
-                                // console.log('Message id = ', _ms_id, " isn't inserted - server with API", uri, " not avaible now..")
                                 _go_out = true;
                             })
                         }
@@ -316,7 +286,7 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
                         if (_conn_status)
                             injection_update_all_time(id, between_date[1], between_date[1], 0)
                                 .then(result => {
-                                    console.log('Emty results');
+                                    //console.log('Emty results');
                                 });
                     }
                 });
@@ -329,9 +299,9 @@ async function fetch_data(id, idd, between_date, last_time, uri, code, token, in
 
 
         i++;
-    }
-    while (!_go_out)
-    console.log('while is out', _go_out, ', limit is ', _limit);
+    } // end while cycle
+
+    console.log('while is out', _go_out, ', limit is ', i);
 };
 
 async function detect_data(time_in, time_now) {
@@ -347,8 +317,6 @@ async function detect_data(time_in, time_now) {
                 __data = __datacur.toJSON();
 
             });
-
-        console.log(" data lentgh = ", __data.length);
 
     } else {
         return 0;
@@ -369,7 +337,7 @@ async function injection_update_all_time(id, _time, last_time, msg_id) {
             msg_id: msg_id
         }, { patch: true })
         .then(result => {
-            console.log("Message id =  is inserted at ", last_time, " from ", _time);
+            //console.log("Message id =  is inserted at ", last_time, " from ", _time);
         }).catch(err => console.log("Update Injection table error...", err));
 }
 
@@ -380,7 +348,7 @@ async function injection_update_msg(id, msg_id) {
             msg_id: msg_id
         }, { patch: true })
         .then(result => {
-            console.log("Message id updated");
+            //console.log("Message id updated");
         }).catch(err => console.log("Update Injection table error...", err));
 }
 
@@ -391,7 +359,7 @@ async function injection_update_time(id, _time) {
 
         }, { patch: true })
         .then(result => {
-            console.log("Datetime is updated... ");
+            //console.log("Datetime is updated... ");
         }).catch(err => console.log("Update Injection table error...", err));
 }
 module.exports = injector;

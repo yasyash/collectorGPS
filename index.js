@@ -23,7 +23,7 @@ const options = {
 
 https.createServer(options, app).listen(8383, () => {
 
-  console.log('Server SSL is started on 8383 port...');
+  console.log('Client SSL is started on 8383 port...');
   cron.schedule("* * * * *", () => {
     console.log("injection");
     injector();
