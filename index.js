@@ -25,7 +25,7 @@ https.createServer(options, app).listen(8383, () => {
 
   console.log('Client SSL is started on 8383 port...');
   cron.schedule("* * * * *", () => {
-    console.log("injection");
+    console.log("injection begin");
     injector();
   });
 

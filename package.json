@@ -1,10 +1,10 @@
 {
   "name": "collector",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Data collector server app",
   "main": "index.js",
   "scripts": {
-    "server": "nodemon --watch  -- index.js",
+    "server": "nodemon --watch  --max-old-space-size=4096 -- index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
