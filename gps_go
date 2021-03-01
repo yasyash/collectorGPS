@@ -1,0 +1,66 @@
+#!/usr/bin/perl -w
+use GPSD::Parse;
+use DBI;
+
+$db = DBI->connect("DBI:Pg:host=localhost;dbname=weather","weather","31415") or die "No access to database: $!";
+
+my $gps = GPSD::Parse->new;
+ 
+# poll for data
+	$gps->poll;
+ while (!defined($gps->lat ))
+ {
+
+}	
+
+ while (($gps->lat eq ""))
+ {
+	$gps->poll;
+ 
+	# get all TPV data in an href
+# print "not";
+	#my $tpv_href = $gps->tpv;
+ }
+# get individual TPV stats
+ 
+#print $gps->tpv('lat');
+#print $gps->tpv('lon');
+ 
+# ...or
+ 
+ if ($gps->lat ne "")
+ {
+ 
+print $gps->lat;
+ print "\n";
+print $gps->lon;
+ print "\n";
+# timestamp of the most recent poll
+ 
+print $gps->time ;
+ print "\n";
+# get all satellites in an href of hrefs
+ 
+my $sats = $gps->satellites;
+ 
+# get an individual piece of info from a single sattelite
+ 
+print $gps->alt;
+ print "\n";
+# check which serial device the GPS is connected to
+ 
+#print $gps->device;
+
+my $update = "UPDATE stations SET latitude = ?, longitude = ? WHERE is_present = true"; 
+
+
+$query_update = $db->prepare("$update");
+
+$query_update->execute($gps->lat, $gps->lon) if ($gps->lat ne "");
+
+
+
+$query_update->finish;
+}
+$db->disconnect;
+
